@@ -41,7 +41,8 @@ import {
   faFileAlt,
   faInfoCircle,
   faArrowCircleDown,
-  faArrowCircleUp
+  faArrowCircleUp,
+  faExclamationCircle
 } from '@fortawesome/free-solid-svg-icons';
 
 export const fontAwesomeIcons = [
@@ -87,5 +88,6 @@ export const fontAwesomeIcons = [
   faFileAlt,
   faInfoCircle,
   faArrowCircleDown,
-  faArrowCircleUp
+  faArrowCircleUp,
+  faExclamationCircle
 ];
