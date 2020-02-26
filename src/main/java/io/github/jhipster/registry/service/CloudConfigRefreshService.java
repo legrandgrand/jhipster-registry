@@ -89,56 +89,57 @@ public class CloudConfigRefreshService {
     public void configMapRefreshContext() throws IOException, InterruptedException {
         List<File> fileList = new ArrayList();
         List<Integer> hashList = new ArrayList();
-        WatchService watcherService = FileSystems.getDefault().newWatchService();
-        Path dirPath = Paths.get(getConfigPath());
-        Files.walkFileTree(dirPath, new HashSet<FileVisitOption>() {
-            {
-                add(FOLLOW_LINKS);
-            }
-        }, 2, new SimpleFileVisitor<Path>() {
-            @Override
-            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-                log.debug("Registering" + dir + " in watcher service");
-                dir.register(watcherService, new WatchEvent.Kind[]{ENTRY_MODIFY}, HIGH);
-                return CONTINUE;
-            }
+        try(WatchService watcherService = FileSystems.getDefault().newWatchService()) {
+            Path dirPath = Paths.get(getConfigPath());
+            Files.walkFileTree(dirPath, new HashSet<FileVisitOption>() {
+                {
+                    add(FOLLOW_LINKS);
+                }
+            }, 2, new SimpleFileVisitor<Path>() {
+                @Override
+                public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+                    log.debug("Registering" + dir + " in watcher service");
+                    dir.register(watcherService, new WatchEvent.Kind[]{ENTRY_MODIFY}, HIGH);
+                    return CONTINUE;
+                }
 
-            @Override
-            public FileVisitResult visitFile(Path path, BasicFileAttributes attrs) throws IOException {
-                File file = path.toFile();
-                if (isValidConfigFile(file.getName().toLowerCase())) {
-                    log.debug("Adding file: " + file.getAbsolutePath());
-                    fileList.add(file);
-                    hashList.add(getHashValue(file));
+                @Override
+                public FileVisitResult visitFile(Path path, BasicFileAttributes attrs) throws IOException {
+                    File file = path.toFile();
+                    if (isValidConfigFile(file.getName().toLowerCase())) {
+                        log.debug("Adding file: " + file.getAbsolutePath());
+                        fileList.add(file);
+                        hashList.add(getHashValue(file));
+                    }
+                    return CONTINUE;
                 }
-                return CONTINUE;
-            }
-        });
-        while (true) {
-            WatchKey key = watcherService.take();
-            List<WatchEvent<?>> events = key.pollEvents();
-            if (!events.isEmpty()) {
-                if (log.isDebugEnabled()) {
-                    events.forEach(event -> log.debug("Event detected: " + event.kind().name() + ", Updated File: " + event.context()));
-                }
-                Collection<Integer> activeList = fileList.stream().map(entry -> getHashValue(entry)).collect(Collectors.toList());
-                if (!hashList.containsAll(activeList)) {
-                    log.debug("File system updated. Hashed content matching failed");
-                    hashList.clear();
-                    hashList.addAll(activeList);
-                    refresher.refresh();
-                    log.debug("@Refreshscope context refreshed for ConfigMap update");
+            });
+            while (true) {
+                WatchKey key = watcherService.take();
+                List<WatchEvent<?>> events = key.pollEvents();
+                if (!events.isEmpty()) {
+                    if (log.isDebugEnabled()) {
+                        events.forEach(event -> log.debug("Event detected: " + event.kind().name() + ", Updated File: " + event.context()));
+                    }
+                    Collection<Integer> activeList = fileList.stream().map(entry -> getHashValue(entry)).collect(Collectors.toList());
+                    if (!hashList.containsAll(activeList)) {
+                        log.debug("File system updated. Hashed content matching failed");
+                        hashList.clear();
+                        hashList.addAll(activeList);
+                        refresher.refresh();
+                        log.debug("@Refreshscope context refreshed for ConfigMap update");
+                    } else {
+                        // do nothing
+                        log.debug("Hashed content unchanged. Ignore and continue");
+                    }
+                    if (!key.reset()) {
+                        log.error("Unable to reset the watcher service. Try restarting the running instance");
+                        break;
+                    }
                 } else {
                     // do nothing
-                    log.debug("Hashed content unchanged. Ignore and continue");
+                    log.debug("Event list is empty. Ignore and continue.");
                 }
-                if (!key.reset()) {
-                    log.error("Unable to reset the watcher service. Try restarting the running instance");
-                    break;
-                }
-            } else {
-                // do nothing
-                log.debug("Event list is empty. Ignore and continue.");
             }
         }
     }
